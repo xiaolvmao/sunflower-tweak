@@ -7,23 +7,31 @@
 
 ## 一、功能
 
-插件入口在 App 内的 **「我的」→「设置」** 页面最底部，样式为一个新的分组，
-里面全部是 `UISwitch` 开关，改动即时生效并持久化：
+插件入口在 App 内的 **「我的」→「设置」** 页面最底部，有一个
+**「向日葵增强 · 去广告」** 入口（带箭头）。点进去是**二级菜单**，
+里面全是 `UISwitch` 开关，改动即时生效并持久化：
 
 | 开关 | 默认 | 作用 |
 | --- | --- | --- |
+| 屏蔽首页横幅广告 | 开 | 隐藏主机列表页顶部/中心横幅、快速连接页广告位 |
+| 去除信息中心 | 开 | 隐藏「我的」页消息入口，并关闭红点检测 |
 | 隐藏「发现」标签 | 开 | 从底部 TabBar 移除发现页 |
 | 屏蔽开屏广告 | 开 | 拦截 AdMob / 微博 / Taku 三条开屏链路 |
 | 屏蔽插屏广告 | 开 | 阻止切回前台时弹出的插屏 |
 | 屏蔽信息流广告 | 开 | 发现页 / 列表页广告位 |
 | 阻止广告数据拉取 | 开 | 从源头阻止各广告位请求素材（更省流量/电量） |
 | 屏蔽版本更新提醒 | 关 | 实验项，关闭更新检测 |
-| 屏蔽评分弹窗 | 关 | 点击评分不再跳转 |
+| 屏蔽评分弹窗 | 开 | 点击评分不再跳转 |
 | 隐藏活动推广位 | 关 | 实验项，「我的」页活动入口 |
 | 开屏广告自动跳过 | 关 | 实验项，开屏出现时自动点击跳过 |
 
-> 说明：源码里另做了免广告启动的判断（GADManager finished 回调主动触发），
-> 避免屏蔽开屏后卡在启动动画。
+> 说明：
+> - 「屏蔽首页横幅广告」针对 v1 之后仍残留的首页横幅，新增了
+>   `AccountHostListViewController` / `QuickConnectViewController` / `ReserveCentralADView` 的 hook，
+>   并把顶部广告高度约束归零，避免留白。
+> - 「去除信息中心」hook `NewMineViewController` 的 `messageButton` /
+>   `clickMessage:` / `checkMessageCenterInformation`。
+> - GADManager finished 回调主动触发，避免屏蔽开屏后卡启动动画。
 
 ---
 
@@ -34,6 +42,12 @@
 
 - `MainTabBarController`：底部 TabBar，`pageSignArr` 管理页面标识；
   `checkAD` / `updateADWithAdInfo:` / `pushReserveADWithUrl:insideJump:` 为广告逻辑
+- `AccountHostListViewController`：首页主机列表，`topADView` / `topADHeightConstraint` /
+  `checkAD` / `showADView` / `pushADWithUrl:insideJump:`（首页横幅的真正宿主）
+- `QuickConnectViewController`：快速连接页，`checkThdAd` / `loadThdAd` / `addAdView:`
+- `ReserveCentralADView`：首页中心预留广告视图
+- `NewMineViewController`：`messageButton` / `clickMessage:` / `checkMessageCenterInformation`
+  / `messageCenterUrl`（信息中心），`rateSunlogin`（评分弹窗）
 - `NewDiscoverViewController`：发现页，`refreshAd` / `getInsertAd` / `updateADWithAdsInfoKey:`
 - `SettingsViewController`：设置页，`numberOfSectionsInTableView:` 等数据源方法用于追加开关区
 - `GADManager`：`showAdIfAvailableWithRootViewController:scene:shownHandler:clickHandler:finishedHandler:`
