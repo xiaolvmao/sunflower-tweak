@@ -49,22 +49,49 @@ Google Mobile Ads / IronSource / 穿山甲(CSJ) / WindMill(微博) 等。
 
 ---
 
-## 三、编译
+## 三、编译（推荐：GitHub Actions 云端免费编译）
 
-本机为 Windows，无 iOS SDK / Theos，**无法在此直接编译出 dylib**。
-请在 macOS（或 Linux 装 Theos）上操作：
+本机为 Windows，无 iOS SDK / Theos，**无法在此直接编译**。工程已配好
+`.github/workflows/build.yml`，用 GitHub 免费 macOS runner 即可产出 dylib。
+
+### 3.1 创建仓库并推送（工程已 git init 并 commit）
+
+在 PowerShell / Git Bash 中，进入本工程目录执行：
 
 ```bash
-# 1. 安装 Theos（若未安装）
+cd C:/Users/desir/WorkBuddy/2026-11-17-18-11-27/SunflowerTweak
+
+# 登录 GitHub CLI（会打开浏览器授权，按提示完成）
+gh auth login
+
+# 创建远程仓库并把本地代码推上去（sunflower-tweak 可改为你想要的名字）
+gh repo create sunflower-tweak --public --source=. --remote=origin --push
+```
+
+> 若不想用 gh 命令：也可在 github.com 网页手动 New repository，
+> 然后执行
+> `git remote add origin https://github.com/<你的用户名>/sunflower-tweak.git`
+> 和 `git push -u origin main`。
+
+### 3.2 等待编译并下载产物
+
+1. 打开 `https://github.com/<你的用户名>/sunflower-tweak/actions`
+2. 点进最新一次 **Build SunflowerTweak (dylib)** 运行（push 会自动触发；
+   也可在 Actions 页面点 **Run workflow** 手动触发）
+3. 编译完成后，在本次运行页面底部 **Artifacts** 下载：
+   - `SunflowerTweak-dylib` → 就是你要的 **dylib 文件**
+   - `SunflowerTweak-deb` → 打包好的 deb（可选）
+4. 下载后把 `SunflowerTweak.dylib` 放到本工程目录，继续第四步注入
+
+### 3.3 本地手动编译（备选）
+
+在 macOS（或装 Theos 的 Linux）上：
+
+```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)
-
-# 2. 进入工程目录
 cd SunflowerTweak
-
-# 3. 编译
 make clean && make package
-
-# 产物: .theos/obj/SunflowerTweak.dylib  (根目录也会复制一份)
+# 产物: .theos/obj/SunflowerTweak.dylib（根目录也会复制一份）
 ```
 
 > 如果 Theos 不支持 `rootless` scheme，删掉 Makefile 里的
