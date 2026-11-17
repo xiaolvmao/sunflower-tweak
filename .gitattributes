@@ -1,0 +1,10 @@
+# 强制所有文本文件使用 LF 换行，避免 Windows 上 CRLF 导致 macOS/Linux 编译失败
+* text=auto eol=lf
+
+*.xm   text eol=lf
+*.sh   text eol=lf
+*.yml  text eol=lf
+Makefile text eol=lf
+control  text eol=lf
+.plist   text eol=lf
+.md      text eol=lf
