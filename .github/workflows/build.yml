@@ -1,0 +1,68 @@
+name: Build SunflowerTweak (dylib)
+
+on:
+  workflow_dispatch:          # 允许在 Actions 页面手动点 Run
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: macos-latest     # Theos 需要 macOS runner (免费额度足够)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: waruhachi/theos-action@v2.6.5
+        with:
+          theos-src: 'theos/theos'
+          theos-branch: 'master'
+          sdks-src: 'theos/sdks'
+          sdks-branch: 'master'
+
+      - name: Build dylib (rootless / TrollStore)
+        run: |
+          make clean
+          make THEOS_PACKAGE_SCHEME=rootless
+
+      - name: Verify dylib
+        run: |
+          echo "--- locate dylib ---"
+          find . -name 'SunflowerTweak.dylib' -type f
+          DYLIB=$(find . -name 'SunflowerTweak.dylib' -type f | head -1)
+          test -n "$DYLIB" || { echo "::error::dylib not found"; exit 1; }
+          echo "--- file info ---"
+          file "$DYLIB"
+          echo "--- architectures ---"
+          lipo -info "$DYLIB" 2>/dev/null || true
+          echo "--- linked libs ---"
+          otool -L "$DYLIB" | head -20
+          mkdir -p artifacts
+          cp "$DYLIB" artifacts/SunflowerTweak.dylib
+
+      - name: Upload dylib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SunflowerTweak-dylib
+          path: artifacts/SunflowerTweak.dylib
+          if-no-files-found: error
+
+      - name: Build .deb package (optional)
+        run: |
+          make clean
+          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 || true
+          DEB=$(find . -name '*.deb' -type f | head -1)
+          if [ -n "$DEB" ]; then
+            mkdir -p artifacts
+            cp "$DEB" artifacts/
+          fi
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SunflowerTweak-deb
+          path: artifacts/*.deb
+          if-no-files-found: warn

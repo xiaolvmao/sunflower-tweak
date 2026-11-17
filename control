@@ -1,0 +1,9 @@
+Package: com.oray.sunflower.tweak
+Name: SunflowerTweak
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 向日葵 15.5.10 去广告与功能增强插件。隐藏"发现"标签、屏蔽开屏/插屏/信息流广告、内置开关设置面板。适用于 TrollStore 注入。
+Maintainer: local
+Author: local
+Section: Tweaks
+Depends: mobilesubstrate
