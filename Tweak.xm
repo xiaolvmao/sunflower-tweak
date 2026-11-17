@@ -50,8 +50,13 @@
 
 @interface NewMineViewController : UIViewController
 @property (nonatomic, strong) UIButton *messageButton;
+@property (nonatomic, strong) NSArray *listDataArray;
+@property (nonatomic, strong) UIImageView *vipImageView;
 - (void)clickMessage:(id)sender;
 - (void)checkMessageCenterInformation;
+- (void)setListDataArray:(NSArray *)arr;
+- (void)resetDataSource;
+- (void)clickMemberButton:(id)sender;
 @end
 
 @interface ADFullScreenViewController : UIViewController
@@ -105,6 +110,14 @@ static NSArray<NSDictionary *> *SFOptions(void) {
                @"sub": @"主机列表页顶部 / 中心横幅", @"def": @YES },
             @{ @"key": @"removeInfoCenter",  @"title": @"去除信息中心",
                @"sub": @"隐藏「我的」页消息入口与红点检测", @"def": @YES },
+            @{ @"key": @"removeVipPromo",   @"title": @"隐藏升级特权引导",
+               @"sub": @"「升级版本享受更多特权」入口", @"def": @YES },
+            @{ @"key": @"removeWelfare",    @"title": @"隐藏我的福利",
+               @"sub": @"「我的」页福利入口", @"def": @YES },
+            @{ @"key": @"removeShop",       @"title": @"隐藏硬件商城",
+               @"sub": @"「我的」页商城入口", @"def": @YES },
+            @{ @"key": @"removeMineMisc",   @"title": @"隐藏其他推广入口",
+               @"sub": @"我的兑换 / 订单 / 下载等", @"def": @YES },
             @{ @"key": @"hideDiscover",     @"title": @"隐藏「发现」标签",
                @"sub": @"移除底部发现入口，立即生效", @"def": @YES },
             @{ @"key": @"removeSplash",     @"title": @"屏蔽开屏广告",
@@ -132,6 +145,63 @@ static NSArray<NSDictionary *> *SFOptions(void) {
 static void SFNotifyPrefsChanged(NSString *key) {
     [[NSNotificationCenter defaultCenter] postNotificationName:@"SunflowerPrefsChanged"
                                                         object:key];
+}
+
+/* ---------- 「我的」页推广入口过滤 ----------
+ * listDataArray 里每个元素平均携带一个功能入口，标题字段可能在
+ * title / name / text / itemTitle / menuTitle / desc 等键上。这里把它们
+ * 汇成一段文本，再用关键词判断是否属于需要隐藏的推广项。 */
+static NSString *SFEntryText(id obj) {
+    if (!obj) return @"";
+    NSMutableString *text = [NSMutableString string];
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+        for (id value in [(NSDictionary *)obj allValues]) {
+            if ([value isKindOfClass:[NSString class]]) [text appendFormat:@" %@", value];
+        }
+    } else {
+        NSArray *keys = @[@"title", @"name", @"text", @"itemTitle", @"menuTitle",
+                          @"titleText", @"desc", @"subTitle", @"itemName"];
+        for (NSString *key in keys) {
+            @try {
+                id value = [obj valueForKey:key];
+                if ([value isKindOfClass:[NSString class]]) [text appendFormat:@" %@", value];
+            } @catch (NSException *e) { }
+        }
+    }
+    return text;
+}
+
+static BOOL SFShouldHideText(NSString *text) {
+    if (text.length == 0) return NO;
+    /* 关键词 -> 对应开关；命中任意一个即隐藏该项 */
+    if (SFBool(@"removeVipPromo", YES) &&
+        ([text rangeOfString:@"特权"].location != NSNotFound ||
+         [text rangeOfString:@"升级"].location != NSNotFound ||
+         [text rangeOfString:@"开通"].location != NSNotFound ||
+         [text rangeOfString:@"会员"].location != NSNotFound)) return YES;
+    if (SFBool(@"removeWelfare", YES) &&
+        [text rangeOfString:@"福利"].location != NSNotFound) return YES;
+    if (SFBool(@"removeShop", YES) &&
+        ([text rangeOfString:@"商城"].location != NSNotFound ||
+         [text rangeOfString:@"商店"].location != NSNotFound)) return YES;
+    if (SFBool(@"removeMineMisc", YES) &&
+        ([text rangeOfString:@"兑换"].location != NSNotFound ||
+         [text rangeOfString:@"订单"].location != NSNotFound ||
+         [text rangeOfString:@"下载"].location != NSNotFound)) return YES;
+    return NO;
+}
+
+static BOOL SFShouldHideEntry(id obj) {
+    return SFShouldHideText(SFEntryText(obj));
+}
+
+static NSArray *SFFilteredMineEntries(NSArray *arr) {
+    if (![arr isKindOfClass:[NSArray class]]) return arr;
+    NSMutableArray *result = [NSMutableArray arrayWithCapacity:arr.count];
+    for (id obj in arr) {
+        if (!SFShouldHideEntry(obj)) [result addObject:obj];
+    }
+    return result;
 }
 
 /* 设置页原始 section 数（hook numberOfSections 时记录） */
@@ -613,6 +683,13 @@ static NSInteger SFOrigSections = 0;
             if ([btn isKindOfClass:[UIView class]]) ((UIView *)btn).hidden = YES;
         } @catch (NSException *e) { }
     }
+    /* 隐藏 VIP 标识图（升级特权引导） */
+    if (SFBool(@"removeVipPromo", YES)) {
+        @try {
+            UIImageView *vip = [self valueForKey:@"vipImageView"];
+            if ([vip isKindOfClass:[UIView class]]) vip.hidden = YES;
+        } @catch (NSException *e) { }
+    }
     /* 隐藏活动推广位 */
     if (SFBool(@"hideActivity", NO)) {
         NSArray *keys = @[@"activityLineView", @"activityBgView1", @"activityBgView3",
@@ -624,6 +701,37 @@ static NSInteger SFOrigSections = 0;
             } @catch (NSException *e) { }
         }
     }
+    /* 兜底：遍历 tableView 可见 cell，把命中关键词的整行直接隐藏 */
+    if (SFBool(@"removeVipPromo", YES) || SFBool(@"removeWelfare", YES) ||
+        SFBool(@"removeShop", YES) || SFBool(@"removeMineMisc", YES)) {
+        @try {
+            id tv = [self valueForKey:@"listTableView"];
+            if ([tv isKindOfClass:[UITableView class]]) {
+                for (UITableViewCell *cell in [(UITableView *)tv visibleCells]) {
+                    NSString *txt = cell.textLabel.text ?: @"";
+                    if (cell.detailTextLabel.text) txt = [txt stringByAppendingString:cell.detailTextLabel.text];
+                    if (SFShouldHideText(txt)) cell.hidden = YES;
+                }
+            }
+        } @catch (NSException *e) { }
+    }
+}
+
+/* 数据源过滤：从源头剔除推广入口（最彻底，行数同步减少） */
+- (void)setListDataArray:(NSArray *)arr {
+    NSArray *filtered = SFFilteredMineEntries(arr);
+    %orig(filtered);
+}
+
+- (void)resetDataSource {
+    %orig;
+    @try {
+        NSArray *cur = [self valueForKey:@"listDataArray"];
+        NSArray *filtered = SFFilteredMineEntries(cur);
+        if (filtered.count != cur.count) {
+            [self setValue:filtered forKey:@"listDataArray"];
+        }
+    } @catch (NSException *e) { }
 }
 
 /* 拦截点击信息中心，防止从其他入口跳转 */
@@ -635,6 +743,32 @@ static NSInteger SFOrigSections = 0;
 /* 屏蔽红点/未读检测，避免服务端持续拉取 */
 - (void)checkMessageCenterInformation {
     if (SFBool(@"removeInfoCenter", YES)) return;
+    %orig;
+}
+
+/* 拦截升级特权 / 福利 / 商城等点击，防止残留入口跳转 */
+- (void)clickMemberButton:(id)sender {
+    if (SFBool(@"removeVipPromo", YES)) return;
+    %orig;
+}
+- (void)goWelfare {
+    if (SFBool(@"removeWelfare", YES)) return;
+    %orig;
+}
+- (void)goToHardwareStore {
+    if (SFBool(@"removeShop", YES)) return;
+    %orig;
+}
+- (void)goMyExchange {
+    if (SFBool(@"removeMineMisc", YES)) return;
+    %orig;
+}
+- (void)goToMyOrder {
+    if (SFBool(@"removeMineMisc", YES)) return;
+    %orig;
+}
+- (void)goMineDownload {
+    if (SFBool(@"removeMineMisc", YES)) return;
     %orig;
 }
 
