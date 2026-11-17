@@ -18,23 +18,41 @@
 /* ---------------------------------------------------------------------
  * 编译期类声明（这些类来自被注入的 App，本地仅用于类型检查）
  * --------------------------------------------------------------------- */
+/* 注意：Logos 会为 %hook 的类自动生成 @class 前向声明，
+ * 若这里只用 category 扩展前向声明的类会编译失败，
+ * 因此统一用完整 @interface 声明。父类仅用于编译期类型检查。 */
 @interface SettingsViewController : UIViewController <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong) UITableView *listTableView;
-@end
-
-@interface MainTabBarController : UITabBarController
-@end
-
-@interface SettingsViewController (SunflowerTweakDecl)
 - (void)sf_switchChanged:(UISwitch *)sender;
 @end
 
-@interface MainTabBarController (SunflowerTweakDecl)
+@interface MainTabBarController : UITabBarController
 - (void)sf_refreshTabs;
 @end
 
-@interface ADFullScreenViewController (SunflowerTweakDecl)
+@interface ADFullScreenViewController : UIViewController
 - (void)skipBtnDidClicked:(id)sender;
+@end
+
+@interface NewMineViewController : UIViewController
+@end
+
+@interface NewDiscoverViewController : UIViewController
+@end
+
+@interface GADManager : NSObject
+@end
+
+@interface WMADManager : NSObject
+@end
+
+@interface TakuADManager : NSObject
+@end
+
+@interface InsertAdManager : NSObject
+@end
+
+@interface ADInfoManager : NSObject
 @end
 
 /* =====================================================================
