@@ -1,0 +1,7 @@
+# 编译产物（由 GitHub Actions 生成，不提交源码仓库）
+*.dylib
+*.deb
+.theos/
+obj/
+packages/
+downloaded_artifacts/
