@@ -15,6 +15,10 @@
 | --- | --- | --- |
 | 屏蔽首页横幅广告 | 开 | 隐藏主机列表页顶部/中心横幅、快速连接页广告位 |
 | 去除信息中心 | 开 | 隐藏「我的」页消息入口，并关闭红点检测 |
+| 隐藏升级特权引导 | 开 | 去除「升级版本享受更多特权」入口及 VIP 标识 |
+| 隐藏我的福利 | 开 | 去除「我的」页福利入口 |
+| 隐藏硬件商城 | 开 | 去除「我的」页商城入口 |
+| 隐藏其他推广入口 | 开 | 去除我的兑换 / 订单 / 下载等 |
 | 隐藏「发现」标签 | 开 | 从底部 TabBar 移除发现页 |
 | 屏蔽开屏广告 | 开 | 拦截 AdMob / 微博 / Taku 三条开屏链路 |
 | 屏蔽插屏广告 | 开 | 阻止切回前台时弹出的插屏 |
@@ -31,6 +35,11 @@
 >   并把顶部广告高度约束归零，避免留白。
 > - 「去除信息中心」hook `NewMineViewController` 的 `messageButton` /
 >   `clickMessage:` / `checkMessageCenterInformation`。
+> - 「我的」页推广入口用三层过滤：数据源 `setListDataArray:` 剔除 +
+>   可见 cell 文本兜底隐藏 + 点击方法拦截（`goWelfare` /
+>   `goToHardwareStore` / `goMyExchange` / `goToMyOrder` / `goMineDownload` /
+>   `clickMemberButton:`）。识别依据是 `AccountSettingInformation` 的
+>   `isWelfareEnable` / `isSunshineShopEnable` 字段及入口中文标题。
 > - GADManager finished 回调主动触发，避免屏蔽开屏后卡启动动画。
 
 ---
@@ -47,7 +56,11 @@
 - `QuickConnectViewController`：快速连接页，`checkThdAd` / `loadThdAd` / `addAdView:`
 - `ReserveCentralADView`：首页中心预留广告视图
 - `NewMineViewController`：`messageButton` / `clickMessage:` / `checkMessageCenterInformation`
-  / `messageCenterUrl`（信息中心），`rateSunlogin`（评分弹窗）
+  / `messageCenterUrl`（信息中心），`rateSunlogin`（评分弹窗），
+  `listDataArray` / `setListDataArray:` / `resetDataSource`（功能入口数据源），
+  `clickMemberButton:` / `goWelfare` / `goToHardwareStore` / `goMyExchange` /
+  `goToMyOrder` / `goMineDownload`（各入口点击），`vipImageView`（VIP 标识）
+- `AccountSettingInformation`：`isWelfareEnable` / `isSunshineShopEnable`（福利/商城入口开关）
 - `NewDiscoverViewController`：发现页，`refreshAd` / `getInsertAd` / `updateADWithAdsInfoKey:`
 - `SettingsViewController`：设置页，`numberOfSectionsInTableView:` 等数据源方法用于追加开关区
 - `GADManager`：`showAdIfAvailableWithRootViewController:scene:shownHandler:clickHandler:finishedHandler:`
