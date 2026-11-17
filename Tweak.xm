@@ -313,12 +313,10 @@ static BOOL SFIsMemberBannerView(UIView *v) {
     CGRect f = v.frame;
     if (f.size.width < 180 || f.size.height < 24 || f.size.height > 170) return NO;
     if (f.size.width / f.size.height < 2.0) return NO;   /* 必须是横条 */
-    /* 圆角：截图横条是明显圆角 */
-    BOOL rounded = (v.layer.cornerRadius > 0) || v.layer.masksToBounds;
-    if (!rounded) return NO;
-    /* 无任何可见文字 → 装饰性横幅（正常功能入口都有标题，不会被误伤） */
+    /* 无任何可见文字 → 装饰性横幅（正常功能入口都有标题，不会被误伤）
+     * 这是最本质的判据：截图那条横条上没有任何文字。 */
     if (SFViewHasVisibleText(v, 0)) return NO;
-    /* 还必须"有内容"：渐变层 / 圆形箭头 / 背景图，三者其一 */
+    /* 必须有视觉内容：渐变层 / 背景图 / 圆形箭头，三者任一 */
     BOOL hasGradient = SFLayerTreeHasGradient(v.layer, 0);
     BOOL hasRoundArrow = NO;
     BOOL hasImage = NO;
@@ -331,8 +329,7 @@ static BOOL SFIsMemberBannerView(UIView *v) {
         }
         if ([sub isKindOfClass:[UIImageView class]]) hasImage = YES;
     }
-    if (!hasGradient && !hasRoundArrow && !hasImage) return NO;
-    return YES;
+    return (hasGradient || hasImage || hasRoundArrow);
 }
 
 static void SFHideMemberBannerInView(UIView *root, NSInteger depth) {
@@ -848,8 +845,9 @@ static NSInteger SFOrigSections = 0;
     }
     /* 隐藏会员渐变横条（无文字，按视图特征识别） */
     if (SFBool(@"hideMemberBanner", YES)) {
-        /* ① 精确定位：serverBoundView 是带渐变层+右侧箭头的圆角卡片，
-         *    与截图横条特征完全一致（resetServerBoundViewBGWithColors: 动态设色） */
+        /* ① 精确定位：serverBoundView 是带渐变层+右侧箭头的圆角卡片
+         *    （resetServerBoundViewBGWithColors: 动态设色，文案来自
+         *    SETOFMIN_SERVER_TITLE_UPGRADE / _DESC_UPGRADE）。 */
         @try {
             UIView *sv = [self valueForKey:@"serverBoundView"];
             if ([sv isKindOfClass:[UIView class]]) sv.hidden = YES;
