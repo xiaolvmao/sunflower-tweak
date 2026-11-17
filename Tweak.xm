@@ -52,11 +52,18 @@
 @property (nonatomic, strong) UIButton *messageButton;
 @property (nonatomic, strong) NSArray *listDataArray;
 @property (nonatomic, strong) UIImageView *vipImageView;
+@property (nonatomic, assign) BOOL needUpgrade;
 - (void)clickMessage:(id)sender;
 - (void)checkMessageCenterInformation;
 - (void)setListDataArray:(NSArray *)arr;
 - (void)resetDataSource;
 - (void)clickMemberButton:(id)sender;
+- (void)setNeedUpgrade:(BOOL)upgrade;
+- (void)goBtMouseSetting;
+- (void)GT_MouseSetting;
+- (void)aboutSunlogin;
+- (void)contactUs;
+- (void)rateSunlogin;
 @end
 
 @interface ADFullScreenViewController : UIViewController
@@ -118,6 +125,14 @@ static NSArray<NSDictionary *> *SFOptions(void) {
                @"sub": @"「我的」页商城入口", @"def": @YES },
             @{ @"key": @"removeMineMisc",   @"title": @"隐藏其他推广入口",
                @"sub": @"我的兑换 / 订单 / 下载等", @"def": @YES },
+            @{ @"key": @"hideBtMouse",      @"title": @"隐藏向日葵蓝牙鼠标",
+               @"sub": @"「我的」页蓝牙鼠标入口", @"def": @YES },
+            @{ @"key": @"hideAboutHelp",    @"title": @"隐藏关于向日葵与帮助",
+               @"sub": @"「我的」页关于/帮助入口", @"def": @YES },
+            @{ @"key": @"hideContactUs",    @"title": @"隐藏联系我们",
+               @"sub": @"「我的」页联系我们入口", @"def": @YES },
+            @{ @"key": @"hideRateEntry",    @"title": @"隐藏向向日葵评分",
+               @"sub": @"「我的」页评分入口", @"def": @YES },
             @{ @"key": @"hideDiscover",     @"title": @"隐藏「发现」标签",
                @"sub": @"移除底部发现入口，立即生效", @"def": @YES },
             @{ @"key": @"removeSplash",     @"title": @"屏蔽开屏广告",
@@ -188,6 +203,19 @@ static BOOL SFShouldHideText(NSString *text) {
         ([text rangeOfString:@"兑换"].location != NSNotFound ||
          [text rangeOfString:@"订单"].location != NSNotFound ||
          [text rangeOfString:@"下载"].location != NSNotFound)) return YES;
+    /* 新增：我的页其他功能入口 */
+    if (SFBool(@"hideBtMouse", YES) &&
+        ([text rangeOfString:@"蓝牙鼠标"].location != NSNotFound ||
+         [text rangeOfString:@"蓝牙"].location != NSNotFound)) return YES;
+    if (SFBool(@"hideAboutHelp", YES) &&
+        ([text rangeOfString:@"关于向日葵"].location != NSNotFound ||
+         [text rangeOfString:@"关于与帮助"].location != NSNotFound ||
+         [text rangeOfString:@"帮助与关于"].location != NSNotFound)) return YES;
+    if (SFBool(@"hideContactUs", YES) &&
+        [text rangeOfString:@"联系我们"].location != NSNotFound) return YES;
+    if (SFBool(@"hideRateEntry", YES) &&
+        ([text rangeOfString:@"评分"].location != NSNotFound ||
+         [text rangeOfString:@"评价一下"].location != NSNotFound)) return YES;
     return NO;
 }
 
@@ -202,6 +230,41 @@ static NSArray *SFFilteredMineEntries(NSArray *arr) {
         if (!SFShouldHideEntry(obj)) [result addObject:obj];
     }
     return result;
+}
+
+/* 判断某段文案是否属于「升级特权引导」横幅 */
+static BOOL SFIsUpgradePromoText(NSString *text) {
+    if (text.length == 0) return NO;
+    return ([text rangeOfString:@"特权"].location != NSNotFound ||
+            [text rangeOfString:@"升级"].location != NSNotFound ||
+            [text rangeOfString:@"开通"].location != NSNotFound ||
+            [text rangeOfString:@"享受更多"].location != NSNotFound ||
+            [text rangeOfString:@"会员"].location != NSNotFound);
+}
+
+/* 递归遍历视图树，把文案命中「升级特权」的最近容器整块隐藏，
+ * 用于清除服务端动态下发、非 listDataArray 驱动的横幅。 */
+static void SFHideUpgradeBannerInView(UIView *root, NSInteger depth) {
+    if (!root || depth > 6) return;
+    for (UIView *sub in [root subviews]) {
+        if (![sub isKindOfClass:[UIView class]]) continue;
+        NSString *txt = nil;
+        if ([sub isKindOfClass:[UILabel class]]) {
+            txt = ((UILabel *)sub).text;
+        } else if ([sub isKindOfClass:[UIButton class]]) {
+            txt = [(UIButton *)sub titleForState:UIControlStateNormal];
+        }
+        if (SFIsUpgradePromoText(txt)) {
+            UIView *target = sub;
+            UIView *parent = sub.superview;
+            /* 上溯一层：若父视图不是根视图，隐藏父视图整块更干净 */
+            if (parent && parent != root &&
+                parent.subviews.count <= 6) target = parent;
+            target.hidden = YES;
+            continue;
+        }
+        SFHideUpgradeBannerInView(sub, depth + 1);
+    }
 }
 
 /* 设置页原始 section 数（hook numberOfSections 时记录） */
@@ -683,11 +746,25 @@ static NSInteger SFOrigSections = 0;
             if ([btn isKindOfClass:[UIView class]]) ((UIView *)btn).hidden = YES;
         } @catch (NSException *e) { }
     }
-    /* 隐藏 VIP 标识图（升级特权引导） */
+    /* 隐藏升级特权引导：VIP 标识 + 动态下发的横幅（递归清理头部视图） */
     if (SFBool(@"removeVipPromo", YES)) {
         @try {
             UIImageView *vip = [self valueForKey:@"vipImageView"];
             if ([vip isKindOfClass:[UIView class]]) vip.hidden = YES;
+        } @catch (NSException *e) { }
+        @try {
+            UIView *header = [self valueForKey:@"headerInfoView"];
+            if ([header isKindOfClass:[UIView class]]) {
+                SFHideUpgradeBannerInView(header, 0);
+            }
+        } @catch (NSException *e) { }
+        /* 遍历 tableView 的 tableHeaderView / header 视图 */
+        @try {
+            id tv = [self valueForKey:@"listTableView"];
+            if ([tv isKindOfClass:[UITableView class]]) {
+                UIView *th = ((UITableView *)tv).tableHeaderView;
+                if (th) SFHideUpgradeBannerInView(th, 0);
+            }
         } @catch (NSException *e) { }
     }
     /* 隐藏活动推广位 */
@@ -703,7 +780,9 @@ static NSInteger SFOrigSections = 0;
     }
     /* 兜底：遍历 tableView 可见 cell，把命中关键词的整行直接隐藏 */
     if (SFBool(@"removeVipPromo", YES) || SFBool(@"removeWelfare", YES) ||
-        SFBool(@"removeShop", YES) || SFBool(@"removeMineMisc", YES)) {
+        SFBool(@"removeShop", YES) || SFBool(@"removeMineMisc", YES) ||
+        SFBool(@"hideBtMouse", YES) || SFBool(@"hideAboutHelp", YES) ||
+        SFBool(@"hideContactUs", YES) || SFBool(@"hideRateEntry", YES)) {
         @try {
             id tv = [self valueForKey:@"listTableView"];
             if ([tv isKindOfClass:[UITableView class]]) {
@@ -772,8 +851,36 @@ static NSInteger SFOrigSections = 0;
     %orig;
 }
 
+/* 从源头阻断「升级特权」横幅：needUpgrade=NO，则不会布置引导视图 */
+- (void)setNeedUpgrade:(BOOL)upgrade {
+    if (SFBool(@"removeVipPromo", YES)) {
+        %orig(NO);
+        return;
+    }
+    %orig(upgrade);
+}
+
+/* 新增入口的点击拦截 */
+- (void)goBtMouseSetting {
+    if (SFBool(@"hideBtMouse", YES)) return;
+    %orig;
+}
+- (void)GT_MouseSetting {
+    if (SFBool(@"hideBtMouse", YES)) return;
+    %orig;
+}
+- (void)aboutSunlogin {
+    if (SFBool(@"hideAboutHelp", YES)) return;
+    %orig;
+}
+- (void)contactUs {
+    if (SFBool(@"hideContactUs", YES)) return;
+    %orig;
+}
+
+/* 评分入口：hideRateEntry 隐藏入口；removeRate 保留原「屏蔽评分弹窗」语义 */
 - (void)rateSunlogin {
-    if (SFBool(@"removeRate", YES)) return;
+    if (SFBool(@"hideRateEntry", YES) || SFBool(@"removeRate", YES)) return;
     %orig;
 }
 
