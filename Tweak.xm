@@ -343,6 +343,94 @@ static void SFHideMemberBannerInView(UIView *root, NSInteger depth) {
     }
 }
 
+/* 统一执行「我的」页清理。可在 layout / appear / 延迟等多个时机重复调用，
+ * 因为会员横幅常是网络数据回来后才动态添加的，只靠 viewDidLayoutSubviews 会漏。 */
+static void SFApplyMineHiding(UIViewController *vc) {
+    if (!vc) return;
+    /* --- 信息中心按钮 --- */
+    if (SFBool(@"removeInfoCenter", YES)) {
+        @try {
+            id btn = [vc valueForKey:@"messageButton"];
+            if ([btn isKindOfClass:[UIView class]]) ((UIView *)btn).hidden = YES;
+        } @catch (NSException *e) { }
+    }
+    /* --- 升级特权引导 --- */
+    if (SFBool(@"removeVipPromo", YES)) {
+        @try {
+            id vip = [vc valueForKey:@"vipImageView"];
+            if ([vip isKindOfClass:[UIView class]]) ((UIView *)vip).hidden = YES;
+        } @catch (NSException *e) { }
+        @try {
+            id header = [vc valueForKey:@"headerInfoView"];
+            if ([header isKindOfClass:[UIView class]]) SFHideUpgradeBannerInView(header, 0);
+        } @catch (NSException *e) { }
+        @try {
+            id tv = [vc valueForKey:@"listTableView"];
+            if ([tv isKindOfClass:[UITableView class]]) {
+                UIView *th = ((UITableView *)tv).tableHeaderView;
+                if (th) SFHideUpgradeBannerInView(th, 0);
+            }
+        } @catch (NSException *e) { }
+    }
+    /* --- 会员渐变横条 --- */
+    if (SFBool(@"hideMemberBanner", YES)) {
+        @try {
+            id sv = [vc valueForKey:@"serverBoundView"];
+            if ([sv isKindOfClass:[UIView class]]) ((UIView *)sv).hidden = YES;
+        } @catch (NSException *e) { }
+        @try { SFHideMemberBannerInView([vc view], 0); } @catch (NSException *e) { }
+        @try {
+            id header = [vc valueForKey:@"headerInfoView"];
+            if ([header isKindOfClass:[UIView class]]) SFHideMemberBannerInView(header, 0);
+        } @catch (NSException *e) { }
+        @try {
+            id tv = [vc valueForKey:@"listTableView"];
+            if ([tv isKindOfClass:[UITableView class]]) {
+                UIView *th = ((UITableView *)tv).tableHeaderView;
+                if (th) SFHideMemberBannerInView(th, 0);
+            }
+        } @catch (NSException *e) { }
+    }
+    /* --- 活动推广位 --- */
+    if (SFBool(@"hideActivity", NO)) {
+        NSArray *keys = @[@"activityLineView", @"activityBgView1", @"activityBgView3",
+                          @"activityLabel_1", @"activityLabel_2", @"activityLabel_3"];
+        for (NSString *key in keys) {
+            @try {
+                id view = [vc valueForKey:key];
+                if ([view isKindOfClass:[UIView class]]) ((UIView *)view).hidden = YES;
+            } @catch (NSException *e) { }
+        }
+    }
+    /* --- cell 文本兜底 --- */
+    if (SFBool(@"removeVipPromo", YES) || SFBool(@"removeWelfare", YES) ||
+        SFBool(@"removeShop", YES) || SFBool(@"removeMineMisc", YES) ||
+        SFBool(@"hideBtMouse", YES) || SFBool(@"hideAboutHelp", YES) ||
+        SFBool(@"hideContactUs", YES) || SFBool(@"hideRateEntry", YES)) {
+        @try {
+            id tv = [vc valueForKey:@"listTableView"];
+            if ([tv isKindOfClass:[UITableView class]]) {
+                for (UITableViewCell *cell in [(UITableView *)tv visibleCells]) {
+                    NSString *txt = cell.textLabel.text ?: @"";
+                    if (cell.detailTextLabel.text) txt = [txt stringByAppendingString:cell.detailTextLabel.text];
+                    if (SFShouldHideText(txt)) cell.hidden = YES;
+                }
+            }
+        } @catch (NSException *e) { }
+    }
+}
+
+/* 延迟多次清扫：横幅异步下发，单次执行抓不到 */
+static void SFScheduleMineHidingRescan(UIViewController *vc) {
+    for (NSNumber *delay in @[@0.3, @1.0, @2.0]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                     (int64_t)(delay.doubleValue * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            SFApplyMineHiding(vc);
+        });
+    }
+}
+
 /* 设置页原始 section 数（hook numberOfSections 时记录） */
 static NSInteger SFOrigSections = 0;
 
@@ -815,86 +903,13 @@ static NSInteger SFOrigSections = 0;
 
 - (void)viewDidLayoutSubviews {
     %orig;
-    /* 隐藏信息中心入口（消息按钮） */
-    if (SFBool(@"removeInfoCenter", YES)) {
-        @try {
-            id btn = [self valueForKey:@"messageButton"];
-            if ([btn isKindOfClass:[UIView class]]) ((UIView *)btn).hidden = YES;
-        } @catch (NSException *e) { }
-    }
-    /* 隐藏升级特权引导：VIP 标识 + 动态下发的横幅（递归清理头部视图） */
-    if (SFBool(@"removeVipPromo", YES)) {
-        @try {
-            UIImageView *vip = [self valueForKey:@"vipImageView"];
-            if ([vip isKindOfClass:[UIView class]]) vip.hidden = YES;
-        } @catch (NSException *e) { }
-        @try {
-            UIView *header = [self valueForKey:@"headerInfoView"];
-            if ([header isKindOfClass:[UIView class]]) {
-                SFHideUpgradeBannerInView(header, 0);
-            }
-        } @catch (NSException *e) { }
-        /* 遍历 tableView 的 tableHeaderView / header 视图 */
-        @try {
-            id tv = [self valueForKey:@"listTableView"];
-            if ([tv isKindOfClass:[UITableView class]]) {
-                UIView *th = ((UITableView *)tv).tableHeaderView;
-                if (th) SFHideUpgradeBannerInView(th, 0);
-            }
-        } @catch (NSException *e) { }
-    }
-    /* 隐藏会员渐变横条（无文字，按视图特征识别） */
-    if (SFBool(@"hideMemberBanner", YES)) {
-        /* ① 精确定位：serverBoundView 是带渐变层+右侧箭头的圆角卡片
-         *    （resetServerBoundViewBGWithColors: 动态设色，文案来自
-         *    SETOFMIN_SERVER_TITLE_UPGRADE / _DESC_UPGRADE）。 */
-        @try {
-            UIView *sv = [self valueForKey:@"serverBoundView"];
-            if ([sv isKindOfClass:[UIView class]]) sv.hidden = YES;
-        } @catch (NSException *e) { }
-        /* ② 特征识别兜底：任意层级渐变 / 圆形箭头 + 横条 + 圆角 */
-        @try { SFHideMemberBannerInView([self view], 0); } @catch (NSException *e) { }
-        @try {
-            UIView *header = [self valueForKey:@"headerInfoView"];
-            if ([header isKindOfClass:[UIView class]]) {
-                SFHideMemberBannerInView(header, 0);
-            }
-        } @catch (NSException *e) { }
-        @try {
-            id tv = [self valueForKey:@"listTableView"];
-            if ([tv isKindOfClass:[UITableView class]]) {
-                UIView *th = ((UITableView *)tv).tableHeaderView;
-                if (th) SFHideMemberBannerInView(th, 0);
-            }
-        } @catch (NSException *e) { }
-    }
-    /* 隐藏活动推广位 */
-    if (SFBool(@"hideActivity", NO)) {
-        NSArray *keys = @[@"activityLineView", @"activityBgView1", @"activityBgView3",
-                          @"activityLabel_1", @"activityLabel_2", @"activityLabel_3"];
-        for (NSString *key in keys) {
-            @try {
-                id view = [self valueForKey:key];
-                if ([view isKindOfClass:[UIView class]]) ((UIView *)view).hidden = YES;
-            } @catch (NSException *e) { }
-        }
-    }
-    /* 兜底：遍历 tableView 可见 cell，把命中关键词的整行直接隐藏 */
-    if (SFBool(@"removeVipPromo", YES) || SFBool(@"removeWelfare", YES) ||
-        SFBool(@"removeShop", YES) || SFBool(@"removeMineMisc", YES) ||
-        SFBool(@"hideBtMouse", YES) || SFBool(@"hideAboutHelp", YES) ||
-        SFBool(@"hideContactUs", YES) || SFBool(@"hideRateEntry", YES)) {
-        @try {
-            id tv = [self valueForKey:@"listTableView"];
-            if ([tv isKindOfClass:[UITableView class]]) {
-                for (UITableViewCell *cell in [(UITableView *)tv visibleCells]) {
-                    NSString *txt = cell.textLabel.text ?: @"";
-                    if (cell.detailTextLabel.text) txt = [txt stringByAppendingString:cell.detailTextLabel.text];
-                    if (SFShouldHideText(txt)) cell.hidden = YES;
-                }
-            }
-        } @catch (NSException *e) { }
-    }
+    SFApplyMineHiding(self);
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    SFApplyMineHiding(self);
+    SFScheduleMineHidingRescan(self);   /* 横幅异步下发，多次延迟清扫 */
 }
 
 /* 数据源过滤：从源头剔除推广入口（最彻底，行数同步减少） */
