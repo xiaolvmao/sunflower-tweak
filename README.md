@@ -15,10 +15,14 @@
 | --- | --- | --- |
 | 屏蔽首页横幅广告 | 开 | 隐藏主机列表页顶部/中心横幅、快速连接页广告位 |
 | 去除信息中心 | 开 | 隐藏「我的」页消息入口，并关闭红点检测 |
-| 隐藏升级特权引导 | 开 | 去除「升级版本享受更多特权」入口及 VIP 标识 |
+| 隐藏升级特权引导 | 开 | 去除「升级版本享受更多特权」入口、VIP 标识及横幅 |
 | 隐藏我的福利 | 开 | 去除「我的」页福利入口 |
 | 隐藏硬件商城 | 开 | 去除「我的」页商城入口 |
 | 隐藏其他推广入口 | 开 | 去除我的兑换 / 订单 / 下载等 |
+| 隐藏向日葵蓝牙鼠标 | 开 | 去除「我的」页蓝牙鼠标入口 |
+| 隐藏关于向日葵与帮助 | 开 | 去除「我的」页关于/帮助入口 |
+| 隐藏联系我们 | 开 | 去除「我的」页联系我们入口 |
+| 隐藏向向日葵评分 | 开 | 去除「我的」页评分入口 |
 | 隐藏「发现」标签 | 开 | 从底部 TabBar 移除发现页 |
 | 屏蔽开屏广告 | 开 | 拦截 AdMob / 微博 / Taku 三条开屏链路 |
 | 屏蔽插屏广告 | 开 | 阻止切回前台时弹出的插屏 |
@@ -38,8 +42,13 @@
 > - 「我的」页推广入口用三层过滤：数据源 `setListDataArray:` 剔除 +
 >   可见 cell 文本兜底隐藏 + 点击方法拦截（`goWelfare` /
 >   `goToHardwareStore` / `goMyExchange` / `goToMyOrder` / `goMineDownload` /
->   `clickMemberButton:`）。识别依据是 `AccountSettingInformation` 的
->   `isWelfareEnable` / `isSunshineShopEnable` 字段及入口中文标题。
+>   `clickMemberButton:` / `goBtMouseSetting` / `GT_MouseSetting` /
+>   `aboutSunlogin` / `contactUs` / `rateSunlogin`）。识别依据是
+>   `AccountSettingInformation` 的 `isWelfareEnable` / `isSunshineShopEnable`
+>   字段及入口中文标题。
+> - 「隐藏升级特权引导」除隐藏 `vipImageView` 外，v4 起还会强制
+>   `setNeedUpgrade:(NO)` 从源头阻断，并递归遍历 `headerInfoView` /
+>   `tableHeaderView` 清除服务端动态下发的升级横幅。
 > - GADManager finished 回调主动触发，避免屏蔽开屏后卡启动动画。
 
 ---
@@ -59,7 +68,9 @@
   / `messageCenterUrl`（信息中心），`rateSunlogin`（评分弹窗），
   `listDataArray` / `setListDataArray:` / `resetDataSource`（功能入口数据源），
   `clickMemberButton:` / `goWelfare` / `goToHardwareStore` / `goMyExchange` /
-  `goToMyOrder` / `goMineDownload`（各入口点击），`vipImageView`（VIP 标识）
+  `goToMyOrder` / `goMineDownload` / `goBtMouseSetting` / `GT_MouseSetting` /
+  `aboutSunlogin` / `contactUs` / `rateSunlogin`（各入口点击），
+  `vipImageView` / `needUpgrade` / `setNeedUpgrade:` / `headerInfoView`（升级横幅）
 - `AccountSettingInformation`：`isWelfareEnable` / `isSunshineShopEnable`（福利/商城入口开关）
 - `NewDiscoverViewController`：发现页，`refreshAd` / `getInsertAd` / `updateADWithAdsInfoKey:`
 - `SettingsViewController`：设置页，`numberOfSectionsInTableView:` 等数据源方法用于追加开关区
