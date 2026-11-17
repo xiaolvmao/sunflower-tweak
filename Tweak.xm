@@ -270,37 +270,73 @@ static void SFHideUpgradeBannerInView(UIView *root, NSInteger depth) {
 }
 
 /* ---------- 会员渐变横条识别 ----------
- * 截图特征：横向长条 + 蓝紫渐变背景 + 右侧白色圆形箭头按钮 + 无文字。
- * 服务端动态下发，不在 ivar / listDataArray 里，只能按视图特征命中。 */
+ * 截图特征：横向长条 + 蓝紫渐变背景 + 右侧白色圆形箭头按钮 + 圆角、无文字。
+ * 该横条是动态下发的，渐变层可能嵌套在 fakeBGLayer 内部，或使用
+ * UgenCAGradientLayer 等自定义渐变类，因此按「类名含 Gradient」递归判定。 */
+static BOOL SFLayerTreeHasGradient(CALayer *layer, NSInteger depth) {
+    if (!layer || depth > 4) return NO;
+    NSString *cls = NSStringFromClass([layer class]);
+    if (cls.length && [cls rangeOfString:@"Gradient" options:NSCaseInsensitiveSearch].location != NSNotFound)
+        return YES;
+    for (CALayer *sub in layer.sublayers) {
+        if (SFLayerTreeHasGradient(sub, depth + 1)) return YES;
+    }
+    return NO;
+}
+
+/* 视图子树内是否存在「可见文字」：有文字的是正常功能入口，不能动 */
+static BOOL SFViewHasVisibleText(UIView *v, NSInteger depth) {
+    if (!v || depth > 5) return NO;
+    if ([v isKindOfClass:[UILabel class]]) {
+        UILabel *lb = (UILabel *)v;
+        if (lb.text.length > 0 && !lb.hidden && lb.alpha > 0.05) return YES;
+    } else if ([v isKindOfClass:[UIButton class]]) {
+        UIButton *btn = (UIButton *)v;
+        if ([btn titleForState:UIControlStateNormal].length > 0 && !btn.hidden) return YES;
+    } else if ([v isKindOfClass:[UITextField class]] || [v isKindOfClass:[UITextView class]]) {
+        return YES;
+    }
+    for (UIView *sub in v.subviews) {
+        if (SFViewHasVisibleText(sub, depth + 1)) return YES;
+    }
+    return NO;
+}
+
 static BOOL SFIsMemberBannerView(UIView *v) {
     if (![v isKindOfClass:[UIView class]]) return NO;
+    /* 排除基础控件与 cell，避免误伤 */
+    if ([v isKindOfClass:[UILabel class]] || [v isKindOfClass:[UIImageView class]] ||
+        [v isKindOfClass:[UIButton class]] || [v isKindOfClass:[UISwitch class]] ||
+        [v isKindOfClass:[UITableViewCell class]] || [v isKindOfClass:[UITableView class]] ||
+        [v isKindOfClass:[UIScrollView class]] || [v isKindOfClass:[UINavigationBar class]] ||
+        [v isKindOfClass:[UITabBar class]]) return NO;
     CGRect f = v.frame;
-    if (f.size.width < 200 || f.size.height < 25 || f.size.height > 150) return NO;
+    if (f.size.width < 180 || f.size.height < 24 || f.size.height > 170) return NO;
     if (f.size.width / f.size.height < 2.0) return NO;   /* 必须是横条 */
-    /* 需要渐变背景层 */
-    Class gradCls = NSClassFromString(@"CAGradientLayer");
-    BOOL hasGradient = NO;
-    if (gradCls) {
-        for (CALayer *layer in (v.layer.sublayers ?: @[])) {
-            if ([layer isKindOfClass:gradCls]) { hasGradient = YES; break; }
-        }
-    }
-    if (!hasGradient) return NO;
-    /* 右侧圆形箭头按钮：宽高接近且 <= 48，位于视图右半部 */
+    /* 圆角：截图横条是明显圆角 */
+    BOOL rounded = (v.layer.cornerRadius > 0) || v.layer.masksToBounds;
+    if (!rounded) return NO;
+    /* 无任何可见文字 → 装饰性横幅（正常功能入口都有标题，不会被误伤） */
+    if (SFViewHasVisibleText(v, 0)) return NO;
+    /* 还必须"有内容"：渐变层 / 圆形箭头 / 背景图，三者其一 */
+    BOOL hasGradient = SFLayerTreeHasGradient(v.layer, 0);
     BOOL hasRoundArrow = NO;
+    BOOL hasImage = NO;
     for (UIView *sub in v.subviews) {
         CGRect sf = sub.frame;
-        if (sf.size.width >= 20 && sf.size.width <= 48 &&
-            fabs(sf.size.width - sf.size.height) <= 8 &&
-            sf.origin.x > f.size.width * 0.55) {
-            hasRoundArrow = YES; break;
+        if (sf.size.width >= 14 && sf.size.width <= 60 &&
+            fabs(sf.size.width - sf.size.height) <= 12 &&
+            sf.origin.x > f.size.width * 0.5) {
+            hasRoundArrow = YES;
         }
+        if ([sub isKindOfClass:[UIImageView class]]) hasImage = YES;
     }
-    return hasRoundArrow;
+    if (!hasGradient && !hasRoundArrow && !hasImage) return NO;
+    return YES;
 }
 
 static void SFHideMemberBannerInView(UIView *root, NSInteger depth) {
-    if (!root || depth > 7) return;
+    if (!root || depth > 8) return;
     for (UIView *sub in [root subviews]) {
         if (SFIsMemberBannerView(sub)) {
             sub.hidden = YES;
@@ -812,6 +848,13 @@ static NSInteger SFOrigSections = 0;
     }
     /* 隐藏会员渐变横条（无文字，按视图特征识别） */
     if (SFBool(@"hideMemberBanner", YES)) {
+        /* ① 精确定位：serverBoundView 是带渐变层+右侧箭头的圆角卡片，
+         *    与截图横条特征完全一致（resetServerBoundViewBGWithColors: 动态设色） */
+        @try {
+            UIView *sv = [self valueForKey:@"serverBoundView"];
+            if ([sv isKindOfClass:[UIView class]]) sv.hidden = YES;
+        } @catch (NSException *e) { }
+        /* ② 特征识别兜底：任意层级渐变 / 圆形箭头 + 横条 + 圆角 */
         @try { SFHideMemberBannerInView([self view], 0); } @catch (NSException *e) { }
         @try {
             UIView *header = [self valueForKey:@"headerInfoView"];
