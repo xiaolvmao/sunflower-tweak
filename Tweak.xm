@@ -3,8 +3,8 @@
  * Bundle ID : com.oray.sunlogin.controlclient
  * 依赖      : Logos (Theos) + Substrate/ElleKit
  *
- * 功能开关全部内置于「我的 → 设置」页面底部，采用 UISwitch 样式，
- * 配置通过 NSUserDefaults 持久化，修改后即时生效。
+ * 设置入口：「我的 → 设置」页底部新增「向日葵增强」二级菜单，
+ *          点进去后是一组 UISwitch 开关，配置 NSUserDefaults 持久化。
  * ===================================================================== */
 
 #import <UIKit/UIKit.h>
@@ -16,25 +16,46 @@
 #pragma clang diagnostic ignored "-Wnullability-completeness"
 
 /* ---------------------------------------------------------------------
- * 编译期类声明（这些类来自被注入的 App，本地仅用于类型检查）
+ * 编译期类声明（来自被注入 App，仅用于类型检查；统一用完整 @interface
+ * 避免 Logos 自动 @class 前向声明导致的 category 编译错误）
  * --------------------------------------------------------------------- */
-/* 注意：Logos 会为 %hook 的类自动生成 @class 前向声明，
- * 若这里只用 category 扩展前向声明的类会编译失败，
- * 因此统一用完整 @interface 声明。父类仅用于编译期类型检查。 */
 @interface SettingsViewController : UIViewController <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong) UITableView *listTableView;
-- (void)sf_switchChanged:(UISwitch *)sender;
 @end
 
 @interface MainTabBarController : UITabBarController
 - (void)sf_refreshTabs;
 @end
 
-@interface ADFullScreenViewController : UIViewController
-- (void)skipBtnDidClicked:(id)sender;
+@interface AccountHostListViewController : UIViewController
+@property (nonatomic, strong) UIView *topADView;
+@property (nonatomic, strong) NSLayoutConstraint *topADHeightConstraint;
+- (void)checkAD;
+- (void)showADView;
+- (void)hiddenADView;
+- (void)resetADView;
+- (void)updateADWithAdInfoWithKey:(id)key;
+- (void)adInfoLoadedWithKey:(id)key isNeedUpdate:(BOOL)needUpdate;
+- (void)pushADWithUrl:(id)url insideJump:(BOOL)insideJump;
+- (void)clickADCellClose:(id)sender;
+@end
+
+@interface QuickConnectViewController : UIViewController
+- (void)checkThdAd;
+- (void)refreshAd;
+- (void)loadThdAd;
+- (void)addAdView:(id)view;
+- (void)adInfoLoadedWithKey:(id)key isNeedUpdate:(BOOL)needUpdate;
 @end
 
 @interface NewMineViewController : UIViewController
+@property (nonatomic, strong) UIButton *messageButton;
+- (void)clickMessage:(id)sender;
+- (void)checkMessageCenterInformation;
+@end
+
+@interface ADFullScreenViewController : UIViewController
+- (void)skipBtnDidClicked:(id)sender;
 @end
 
 @interface NewDiscoverViewController : UIViewController
@@ -42,17 +63,20 @@
 
 @interface GADManager : NSObject
 @end
-
 @interface WMADManager : NSObject
 @end
-
 @interface TakuADManager : NSObject
 @end
-
 @interface InsertAdManager : NSObject
 @end
-
 @interface ADInfoManager : NSObject
+@end
+@interface ReserveCentralADView : UIView
+@end
+
+/* 二级菜单控制器：纯 OC 类（编译期即存在，供设置页直接引用） */
+@interface SFSettingsRootViewController : UITableViewController
+- (void)sf_switchChanged:(UISwitch *)sender;
 @end
 
 /* =====================================================================
@@ -71,40 +95,137 @@ static void SFSetBool(NSString *key, BOOL value) {
     [ud synchronize];
 }
 
-/* 开关项定义：key / 标题 / 副标题 / 默认值 */
+/* 开关项定义：key / 标题 / 副标题 / 默认值。二级菜单里按此顺序展示。 */
 static NSArray<NSDictionary *> *SFOptions(void) {
     static NSArray *options = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         options = @[
-            @{ @"key": @"hideDiscover",  @"title": @"隐藏「发现」标签",
+            @{ @"key": @"removeHomeBanner", @"title": @"屏蔽首页横幅广告",
+               @"sub": @"主机列表页顶部 / 中心横幅", @"def": @YES },
+            @{ @"key": @"removeInfoCenter",  @"title": @"去除信息中心",
+               @"sub": @"隐藏「我的」页消息入口与红点检测", @"def": @YES },
+            @{ @"key": @"hideDiscover",     @"title": @"隐藏「发现」标签",
                @"sub": @"移除底部发现入口，立即生效", @"def": @YES },
-            @{ @"key": @"removeSplash",  @"title": @"屏蔽开屏广告",
+            @{ @"key": @"removeSplash",     @"title": @"屏蔽开屏广告",
                @"sub": @"启动不再等待广告", @"def": @YES },
-            @{ @"key": @"removeInsert",  @"title": @"屏蔽插屏广告",
+            @{ @"key": @"removeInsert",     @"title": @"屏蔽插屏广告",
                @"sub": @"切回前台不再弹广告", @"def": @YES },
-            @{ @"key": @"removeFeed",    @"title": @"屏蔽信息流广告",
+            @{ @"key": @"removeFeed",       @"title": @"屏蔽信息流广告",
                @"sub": @"发现页/列表页广告位", @"def": @YES },
-            @{ @"key": @"blockAdFetch",  @"title": @"阻止广告数据拉取",
+            @{ @"key": @"blockAdFetch",     @"title": @"阻止广告数据拉取",
                @"sub": @"更彻底，减少联网与耗电", @"def": @YES },
-            @{ @"key": @"removeUpdate",  @"title": @"屏蔽版本更新提醒",
+            @{ @"key": @"removeUpdate",     @"title": @"屏蔽版本更新提醒",
                @"sub": @"实验项，关闭更新检测", @"def": @NO },
-            @{ @"key": @"removeRate",    @"title": @"屏蔽评分弹窗",
+            @{ @"key": @"removeRate",       @"title": @"屏蔽评分弹窗",
                @"sub": @"点击评分无反应", @"def": @YES },
-            @{ @"key": @"hideActivity",  @"title": @"隐藏活动推广位",
+            @{ @"key": @"hideActivity",     @"title": @"隐藏活动推广位",
                @"sub": @"实验项，「我的」页活动入口", @"def": @NO },
-            @{ @"key": @"autoSkipSplash",@"title": @"开屏广告自动跳过",
+            @{ @"key": @"autoSkipSplash",   @"title": @"开屏广告自动跳过",
                @"sub": @"实验项，出现开屏时自动跳过", @"def": @NO },
         ];
     });
     return options;
 }
 
+/* 开关变更后统一广播，让主界面即时刷新（隐藏发现等） */
+static void SFNotifyPrefsChanged(NSString *key) {
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SunflowerPrefsChanged"
+                                                        object:key];
+}
+
 /* 设置页原始 section 数（hook numberOfSections 时记录） */
 static NSInteger SFOrigSections = 0;
 
 /* =====================================================================
- * 2. 设置面板：在 SettingsViewController  tableView 末尾追加开关区
+ * 2. 二级菜单：SFSettingsRootViewController（纯 OC 类实现）
+ * ===================================================================== */
+@implementation SFSettingsRootViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"向日葵增强";
+    self.tableView.backgroundColor = [UIColor groupTableViewBackgroundColor];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return 1;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return SFOptions().count;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSDictionary *option = SFOptions()[indexPath.row];
+    static NSString *cellID = @"SFToggleCell";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellID];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle
+                                      reuseIdentifier:cellID];
+        UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectZero];
+        [sw addTarget:self action:@selector(sf_switchChanged:)
+     forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.textLabel.numberOfLines = 1;
+        cell.detailTextLabel.numberOfLines = 0;
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:11.0];
+        cell.detailTextLabel.textColor = [UIColor grayColor];
+    }
+    cell.textLabel.text = option[@"title"];
+    cell.detailTextLabel.text = option[@"sub"];
+    UISwitch *sw = (UISwitch *)cell.accessoryView;
+    sw.tag = indexPath.row;
+    [sw setOn:SFBool(option[@"key"], [option[@"def"] boolValue]) animated:NO];
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
+    UISwitch *sw = (UISwitch *)cell.accessoryView;
+    if ([sw isKindOfClass:[UISwitch class]]) {
+        [sw setOn:!sw.isOn animated:YES];
+        [self sf_switchChanged:sw];
+    }
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return 56.0;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return 44.0;
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0,
+                         tableView.bounds.size.width, 44.0)];
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(16, 6,
+                         tableView.bounds.size.width - 32, 32)];
+    label.text = @"修改后即时生效 · 配置自动保存";
+    label.font = [UIFont systemFontOfSize:12.0];
+    label.textColor = [UIColor grayColor];
+    label.numberOfLines = 0;
+    [header addSubview:label];
+    return header;
+}
+
+- (void)sf_switchChanged:(UISwitch *)sender {
+    NSInteger row = sender.tag;
+    NSArray *options = SFOptions();
+    if (row < 0 || row >= (NSInteger)options.count) return;
+    NSString *key = options[row][@"key"];
+    SFSetBool(key, sender.isOn);
+    SFNotifyPrefsChanged(key);
+    NSLog(@"[SunflowerTweak] set %@ = %@", key, sender.isOn ? @"ON" : @"OFF");
+}
+
+@end
+
+/* =====================================================================
+ * 3. 设置页：追加一个「向日葵增强」入口，点击进入二级菜单
  * ===================================================================== */
 %hook SettingsViewController
 
@@ -115,35 +236,20 @@ static NSInteger SFOrigSections = 0;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == SFOrigSections) {
-        return SFOptions().count;
-    }
+    if (section == SFOrigSections) return 1;
     return %orig;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == SFOrigSections) {
-        NSDictionary *option = SFOptions()[indexPath.row];
-        static NSString *cellID = @"SunflowerToggleCell";
+        static NSString *cellID = @"SFEntryCell";
         UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellID];
         if (!cell) {
-            cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle
+            cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault
                                           reuseIdentifier:cellID];
-            UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectZero];
-            [sw addTarget:self action:@selector(sf_switchChanged:)
-         forControlEvents:UIControlEventValueChanged];
-            cell.accessoryView = sw;
-            cell.selectionStyle = UITableViewCellSelectionStyleNone;
-            cell.textLabel.numberOfLines = 1;
-            cell.detailTextLabel.numberOfLines = 0;
-            cell.detailTextLabel.font = [UIFont systemFontOfSize:11.0];
-            cell.detailTextLabel.textColor = [UIColor grayColor];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-        cell.textLabel.text = option[@"title"];
-        cell.detailTextLabel.text = option[@"sub"];
-        UISwitch *sw = (UISwitch *)cell.accessoryView;
-        sw.tag = indexPath.row;
-        [sw setOn:SFBool(option[@"key"], [option[@"def"] boolValue]) animated:NO];
+        cell.textLabel.text = @"向日葵增强 · 去广告";
         return cell;
     }
     return %orig;
@@ -152,11 +258,13 @@ static NSInteger SFOrigSections = 0;
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == SFOrigSections) {
         [tableView deselectRowAtIndexPath:indexPath animated:YES];
-        UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
-        UISwitch *sw = (UISwitch *)cell.accessoryView;
-        if ([sw isKindOfClass:[UISwitch class]]) {
-            [sw setOn:!sw.isOn animated:YES];
-            [self sf_switchChanged:sw];
+        SFSettingsRootViewController *vc = [[SFSettingsRootViewController alloc]
+                                             initWithStyle:UITableViewStyleGrouped];
+        if (self.navigationController) {
+            [self.navigationController pushViewController:vc animated:YES];
+        } else {
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+            [self presentViewController:nav animated:YES completion:nil];
         }
         return;
     }
@@ -164,7 +272,7 @@ static NSInteger SFOrigSections = 0;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == SFOrigSections) return 54.0;
+    if (indexPath.section == SFOrigSections) return 50.0;
     return %orig;
 }
 
@@ -180,7 +288,7 @@ static NSInteger SFOrigSections = 0;
         header.backgroundColor = [UIColor clearColor];
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(16, 4,
                              tableView.bounds.size.width - 32, 22)];
-        label.text = @"向日葵增强 · 去广告 (TrollStore)";
+        label.text = @"增强插件 (TrollStore)";
         label.font = [UIFont boldSystemFontOfSize:13.0];
         label.textColor = [UIColor grayColor];
         [header addSubview:label];
@@ -189,27 +297,10 @@ static NSInteger SFOrigSections = 0;
     return %orig;
 }
 
-/* 开关事件：写入偏好并广播通知，使主界面即时刷新 */
-%new
-- (void)sf_switchChanged:(UISwitch *)sender {
-    NSInteger row = sender.tag;
-    NSArray *options = SFOptions();
-    if (row < 0 || row >= (NSInteger)options.count) return;
-    NSDictionary *option = options[row];
-    NSString *key = option[@"key"];
-    SFSetBool(key, sender.isOn);
-
-    if ([key isEqualToString:@"hideDiscover"]) {
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"SunflowerDiscoverChanged"
-                                                            object:nil];
-    }
-    NSLog(@"[SunflowerTweak] set %@ = %@", key, sender.isOn ? @"ON" : @"OFF");
-}
-
 %end
 
 /* =====================================================================
- * 3. 主 TabBar：隐藏「发现」标签 + 屏蔽主界面广告 + 更新检测
+ * 4. 主 TabBar：隐藏「发现」标签 + 响应设置变更
  * ===================================================================== */
 %hook MainTabBarController
 
@@ -217,7 +308,7 @@ static NSInteger SFOrigSections = 0;
     %orig;
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(sf_refreshTabs)
-                                                 name:@"SunflowerDiscoverChanged"
+                                                 name:@"SunflowerPrefsChanged"
                                                object:nil];
     dispatch_async(dispatch_get_main_queue(), ^{
         [self sf_refreshTabs];
@@ -231,7 +322,7 @@ static NSInteger SFOrigSections = 0;
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:@"SunflowerDiscoverChanged"
+                                                    name:@"SunflowerPrefsChanged"
                                                   object:nil];
     %orig;
 }
@@ -274,29 +365,25 @@ static NSInteger SFOrigSections = 0;
     }
 }
 
-/* 主界面广告位 */
+/* TabBar 自身携带的广告兜底 */
 - (void)checkAD {
     if (SFBool(@"removeFeed", YES)) return;
     %orig;
 }
-
 - (void)updateADWithAdInfo:(id)info {
     if (SFBool(@"removeFeed", YES)) return;
     %orig;
 }
-
 - (void)adInfoLoadedWithKey:(id)key isNeedUpdate:(BOOL)needUpdate {
     if (SFBool(@"removeFeed", YES)) return;
     %orig;
 }
-
 - (void)updateReservedADWithADInfo:(id)info showViewController:(id)vc {
-    if (SFBool(@"removeFeed", YES)) return;
+    if (SFBool(@"removeHomeBanner", YES)) return;
     %orig;
 }
-
 - (void)pushReserveADWithUrl:(id)url insideJump:(BOOL)insideJump {
-    if (SFBool(@"removeFeed", YES)) return;
+    if (SFBool(@"removeHomeBanner", YES)) return;
     %orig;
 }
 
@@ -309,11 +396,111 @@ static NSInteger SFOrigSections = 0;
 %end
 
 /* =====================================================================
- * 4. 开屏广告：Google / 微博(WindMill) / Taku 三条链路
+ * 5. 首页主机列表：屏蔽顶部 / 中心横幅广告（本次新增的关键 hook）
+ * ===================================================================== */
+%hook AccountHostListViewController
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    if (!SFBool(@"removeHomeBanner", YES)) return;
+    /* 收起顶部横幅并把高度约束归零，确保 tableView 不留空白 */
+    @try {
+        UIView *topView = [self valueForKey:@"topADView"];
+        if ([topView isKindOfClass:[UIView class]]) topView.hidden = YES;
+        NSLayoutConstraint *hc = [self valueForKey:@"topADHeightConstraint"];
+        if ([hc isKindOfClass:[NSLayoutConstraint class]]) hc.constant = 0.0;
+    } @catch (NSException *e) { }
+    /* 兜底：隐藏 ids 里的广告视图 */
+    for (NSString *key in @[@"adView", @"listADView", @"bannerView"]) {
+        @try {
+            id v = [self valueForKey:key];
+            if ([v isKindOfClass:[UIView class]]) ((UIView *)v).hidden = YES;
+        } @catch (NSException *e) { }
+    }
+}
+
+- (void)checkAD {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+
+- (void)updateADWithAdInfoWithKey:(id)key {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+
+- (void)adInfoLoadedWithKey:(id)key isNeedUpdate:(BOOL)needUpdate {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+
+- (void)pushADWithUrl:(id)url insideJump:(BOOL)insideJump {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+
+- (void)showADView {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+
+- (void)clickADCellClose:(id)sender {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+
+%end
+
+/* =====================================================================
+ * 6. 快速连接页：屏蔽第三方广告位（本次新增）
+ * ===================================================================== */
+%hook QuickConnectViewController
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    if (!SFBool(@"removeHomeBanner", YES)) return;
+    @try {
+        id v = [self valueForKey:@"adView"];
+        if ([v isKindOfClass:[UIView class]]) ((UIView *)v).hidden = YES;
+    } @catch (NSException *e) { }
+}
+
+- (void)checkThdAd {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+- (void)refreshAd {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+- (void)loadThdAd {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+- (void)addAdView:(id)view {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+- (void)adInfoLoadedWithKey:(id)key isNeedUpdate:(BOOL)needUpdate {
+    if (SFBool(@"removeHomeBanner", YES)) return;
+    %orig;
+}
+
+%end
+
+/* 首页中心预留广告视图：强制隐藏 */
+%hook ReserveCentralADView
+- (void)layoutSubviews {
+    %orig;
+    if (SFBool(@"removeHomeBanner", YES)) self.hidden = YES;
+}
+%end
+
+/* =====================================================================
+ * 7. 开屏广告：Google / 微博(WindMill) / Taku 三条链路
  * ===================================================================== */
 %hook GADManager
 
-/* AdMob 开屏：拦截展示并主动回调 finished，避免启动流程卡住 */
 - (void)showAdIfAvailableWithRootViewController:(id)rootVC
                                           scene:(id)scene
                                   shownHandler:(void (^)(void))shown
@@ -326,7 +513,6 @@ static NSInteger SFOrigSections = 0;
     %orig;
 }
 
-/* 不预加载开屏广告 */
 - (void)loadSplashADWithComplete:(void (^)(void))complete
                           scene:(id)scene
                       isPreload:(BOOL)isPreload {
@@ -350,7 +536,6 @@ static NSInteger SFOrigSections = 0;
 }
 %end
 
-/* 可选兜底：开屏出现时自动点击跳过 */
 %hook ADFullScreenViewController
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
@@ -363,7 +548,7 @@ static NSInteger SFOrigSections = 0;
 %end
 
 /* =====================================================================
- * 5. 插屏广告：回前台触发的插屏
+ * 8. 插屏广告
  * ===================================================================== */
 %hook InsertAdManager
 - (void)didBecomeActive:(id)notification {
@@ -373,7 +558,7 @@ static NSInteger SFOrigSections = 0;
 %end
 
 /* =====================================================================
- * 6. 发现页信息流广告
+ * 9. 发现页信息流广告
  * ===================================================================== */
 %hook NewDiscoverViewController
 - (void)refreshAd {
@@ -395,14 +580,14 @@ static NSInteger SFOrigSections = 0;
 %end
 
 /* =====================================================================
- * 7. 广告数据拉取（深度去广告）：阻止各广告位向服务器请求素材
+ * 10. 广告数据拉取（深度去广告）
  * ===================================================================== */
 %hook ADInfoManager
 - (void)updateStartupAD             { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
 - (void)updateHotStartupAD          { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
-- (void)updateDeviceListAD          { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
-- (void)updateDeviceTopAD           { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
-- (void)updateDeviceReserveAD       { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
+- (void)updateDeviceListAD          { if (SFBool(@"removeHomeBanner", YES) || SFBool(@"blockAdFetch", YES)) return; %orig; }
+- (void)updateDeviceTopAD           { if (SFBool(@"removeHomeBanner", YES) || SFBool(@"blockAdFetch", YES)) return; %orig; }
+- (void)updateDeviceReserveAD       { if (SFBool(@"removeHomeBanner", YES) || SFBool(@"blockAdFetch", YES)) return; %orig; }
 - (void)updateMineReserveAD         { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
 - (void)updateClientActivityAD      { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
 - (void)updateAwesunDiscoverAD      { if (SFBool(@"blockAdFetch", YES)) return; %orig; }
@@ -415,32 +600,53 @@ static NSInteger SFOrigSections = 0;
 %end
 
 /* =====================================================================
- * 8. 其它优化：「我的」页评分弹窗 / 活动推广位
+ * 11. 「我的」页：信息中心 / 评分 / 活动推广位
  * ===================================================================== */
 %hook NewMineViewController
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    /* 隐藏信息中心入口（消息按钮） */
+    if (SFBool(@"removeInfoCenter", YES)) {
+        @try {
+            id btn = [self valueForKey:@"messageButton"];
+            if ([btn isKindOfClass:[UIView class]]) ((UIView *)btn).hidden = YES;
+        } @catch (NSException *e) { }
+    }
+    /* 隐藏活动推广位 */
+    if (SFBool(@"hideActivity", NO)) {
+        NSArray *keys = @[@"activityLineView", @"activityBgView1", @"activityBgView3",
+                          @"activityLabel_1", @"activityLabel_2", @"activityLabel_3"];
+        for (NSString *key in keys) {
+            @try {
+                id view = [self valueForKey:key];
+                if ([view isKindOfClass:[UIView class]]) ((UIView *)view).hidden = YES;
+            } @catch (NSException *e) { }
+        }
+    }
+}
+
+/* 拦截点击信息中心，防止从其他入口跳转 */
+- (void)clickMessage:(id)sender {
+    if (SFBool(@"removeInfoCenter", YES)) return;
+    %orig;
+}
+
+/* 屏蔽红点/未读检测，避免服务端持续拉取 */
+- (void)checkMessageCenterInformation {
+    if (SFBool(@"removeInfoCenter", YES)) return;
+    %orig;
+}
+
 - (void)rateSunlogin {
     if (SFBool(@"removeRate", YES)) return;
     %orig;
 }
 
-- (void)viewDidLayoutSubviews {
-    %orig;
-    if (!SFBool(@"hideActivity", NO)) return;
-    NSArray *keys = @[@"activityLineView", @"activityBgView1", @"activityBgView3",
-                      @"activityLabel_1", @"activityLabel_2", @"activityLabel_3"];
-    for (NSString *key in keys) {
-        @try {
-            id view = [self valueForKey:key];
-            if ([view isKindOfClass:[UIView class]]) {
-                ((UIView *)view).hidden = YES;
-            }
-        } @catch (NSException *exception) { /* 忽略不存在的键 */ }
-    }
-}
 %end
 
 /* =====================================================================
- * 9. 构造入口：加载日志
+ * 12. 构造入口
  * ===================================================================== */
 %ctor {
     NSLog(@"[SunflowerTweak] loaded. bundle=%@  ver=%@",
