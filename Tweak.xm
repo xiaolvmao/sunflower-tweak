@@ -133,6 +133,8 @@ static NSArray<NSDictionary *> *SFOptions(void) {
                @"sub": @"「我的」页联系我们入口", @"def": @YES },
             @{ @"key": @"hideRateEntry",    @"title": @"隐藏向向日葵评分",
                @"sub": @"「我的」页评分入口", @"def": @YES },
+            @{ @"key": @"hideMemberBanner", @"title": @"隐藏会员渐变横幅",
+               @"sub": @"会员区蓝紫渐变引导横条", @"def": @YES },
             @{ @"key": @"hideDiscover",     @"title": @"隐藏「发现」标签",
                @"sub": @"移除底部发现入口，立即生效", @"def": @YES },
             @{ @"key": @"removeSplash",     @"title": @"屏蔽开屏广告",
@@ -264,6 +266,47 @@ static void SFHideUpgradeBannerInView(UIView *root, NSInteger depth) {
             continue;
         }
         SFHideUpgradeBannerInView(sub, depth + 1);
+    }
+}
+
+/* ---------- 会员渐变横条识别 ----------
+ * 截图特征：横向长条 + 蓝紫渐变背景 + 右侧白色圆形箭头按钮 + 无文字。
+ * 服务端动态下发，不在 ivar / listDataArray 里，只能按视图特征命中。 */
+static BOOL SFIsMemberBannerView(UIView *v) {
+    if (![v isKindOfClass:[UIView class]]) return NO;
+    CGRect f = v.frame;
+    if (f.size.width < 200 || f.size.height < 25 || f.size.height > 150) return NO;
+    if (f.size.width / f.size.height < 2.0) return NO;   /* 必须是横条 */
+    /* 需要渐变背景层 */
+    Class gradCls = NSClassFromString(@"CAGradientLayer");
+    BOOL hasGradient = NO;
+    if (gradCls) {
+        for (CALayer *layer in (v.layer.sublayers ?: @[])) {
+            if ([layer isKindOfClass:gradCls]) { hasGradient = YES; break; }
+        }
+    }
+    if (!hasGradient) return NO;
+    /* 右侧圆形箭头按钮：宽高接近且 <= 48，位于视图右半部 */
+    BOOL hasRoundArrow = NO;
+    for (UIView *sub in v.subviews) {
+        CGRect sf = sub.frame;
+        if (sf.size.width >= 20 && sf.size.width <= 48 &&
+            fabs(sf.size.width - sf.size.height) <= 8 &&
+            sf.origin.x > f.size.width * 0.55) {
+            hasRoundArrow = YES; break;
+        }
+    }
+    return hasRoundArrow;
+}
+
+static void SFHideMemberBannerInView(UIView *root, NSInteger depth) {
+    if (!root || depth > 7) return;
+    for (UIView *sub in [root subviews]) {
+        if (SFIsMemberBannerView(sub)) {
+            sub.hidden = YES;
+            continue;
+        }
+        SFHideMemberBannerInView(sub, depth + 1);
     }
 }
 
@@ -764,6 +807,23 @@ static NSInteger SFOrigSections = 0;
             if ([tv isKindOfClass:[UITableView class]]) {
                 UIView *th = ((UITableView *)tv).tableHeaderView;
                 if (th) SFHideUpgradeBannerInView(th, 0);
+            }
+        } @catch (NSException *e) { }
+    }
+    /* 隐藏会员渐变横条（无文字，按视图特征识别） */
+    if (SFBool(@"hideMemberBanner", YES)) {
+        @try { SFHideMemberBannerInView([self view], 0); } @catch (NSException *e) { }
+        @try {
+            UIView *header = [self valueForKey:@"headerInfoView"];
+            if ([header isKindOfClass:[UIView class]]) {
+                SFHideMemberBannerInView(header, 0);
+            }
+        } @catch (NSException *e) { }
+        @try {
+            id tv = [self valueForKey:@"listTableView"];
+            if ([tv isKindOfClass:[UITableView class]]) {
+                UIView *th = ((UITableView *)tv).tableHeaderView;
+                if (th) SFHideMemberBannerInView(th, 0);
             }
         } @catch (NSException *e) { }
     }
